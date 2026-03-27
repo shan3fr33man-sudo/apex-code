@@ -8,7 +8,8 @@ export const ChatRequestSchema = z.object({
     content: z.string(),
   })),
   conversationId: z.string().uuid().optional(),
-  mode: z.enum(['instant', 'thinking']).default('instant'),
+  modelId: z.string().default('kimi-k2.5'),
+  mode: z.enum(['instant', 'thinking']).default('instant'), // Legacy — kept for backward compat
   taskType: z.enum([
     'code-generation', 'debugging', 'refactoring',
     'explanation', 'architecture', 'general'
