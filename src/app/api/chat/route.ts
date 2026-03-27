@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server';
 import { ChatRequestSchema } from '@/lib/api/types';
 import { checkTokenLimit, incrementTokenUsage } from '@/lib/billing/usage';
 import { withRetry } from '@/lib/ai/retry';
+import { getAutoScrapeUrl } from '@/lib/ai/router';
+import { env } from '@/lib/env';
 import { NextRequest, NextResponse } from 'next/server';
 
 export const maxDuration = 60;
@@ -32,8 +34,45 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 4. Build system prompt based on task type
-  const systemPrompt = buildSystemPrompt(taskType);
+  // 4. Auto-scrape URL if detected in last user message
+  let scrapedContext = '';
+  const lastUserMsg = messages.filter((m: { role: string }) => m.role === 'user').pop();
+  if (lastUserMsg && env.FIRECRAWL_API_KEY) {
+    const scrapeUrl = getAutoScrapeUrl(lastUserMsg.content);
+    if (scrapeUrl) {
+      try {
+        const scrapeRes = await fetch('https://api.firecrawl.dev/v1/scrape', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${env.FIRECRAWL_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            url: scrapeUrl,
+            formats: ['markdown'],
+            onlyMainContent: true,
+          }),
+        });
+        if (scrapeRes.ok) {
+          const scrapeData = await scrapeRes.json();
+          const content = scrapeData.data?.markdown || '';
+          if (content) {
+            scrapedContext = `\n\n[Auto-scraped content from ${scrapeUrl}]:\n${content.slice(0, 8000)}`;
+            // Track token cost
+            await incrementTokenUsage(user.id, conversationId ?? '', {
+              promptTokens: 0, completionTokens: 0,
+              totalTokens: Math.ceil(content.length / 4),
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('[chat] Auto-scrape failed for', scrapeUrl, e);
+      }
+    }
+  }
+
+  // 5. Build system prompt based on task type
+  const systemPrompt = buildSystemPrompt(taskType) + scrapedContext;
 
   // 5. Stream from Kimi K2.5
   try {
