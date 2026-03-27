@@ -1,0 +1,88 @@
+{
+  "project": "apex-code",
+  "last_updated": "2026-03-26T21:30:00Z",
+  "current_phase": 1,
+  "bot_session_count": 1,
+  "tasks": [
+    {
+      "id": "T001",
+      "phase": 1,
+      "name": "Project scaffold and validated env",
+      "status": "in-progress",
+      "started_at": "2026-03-26T21:30:00Z",
+      "completed_at": null,
+      "committed_sha": null,
+      "notes": "Next.js 14 scaffold with all dependencies installed"
+    },
+    {
+      "id": "T002",
+      "phase": 1,
+      "name": "Database schema (all tables + RLS)",
+      "status": "todo",
+      "started_at": null,
+      "completed_at": null,
+      "committed_sha": null,
+      "notes": ""
+    },
+    {
+      "id": "T003",
+      "phase": 1,
+      "name": "Supabase Auth (Email + GitHub OAuth)",
+      "status": "todo",
+      "started_at": null,
+      "completed_at": null,
+      "committed_sha": null,
+      "notes": ""
+    },
+    {
+      "id": "T004",
+      "phase": 1,
+      "name": "Dashboard shell + navigation",
+      "status": "todo",
+      "started_at": null,
+      "completed_at": null,
+      "committed_sha": null,
+      "notes": ""
+    },
+    {
+      "id": "T005",
+      "phase": 1,
+      "name": "API types contract",
+      "status": "todo",
+      "started_at": null,
+      "completed_at": null,
+      "committed_sha": null,
+      "notes": ""
+    },
+    {
+      "id": "T006",
+      "phase": 1,
+      "name": "Token usage + billing guards",
+      "status": "todo",
+      "started_at": null,
+      "completed_at": null,
+      "committed_sha": null,
+      "notes": ""
+    },
+    {
+      "id": "T007",
+      "phase": 1,
+      "name": "Landing page",
+      "status": "todo",
+      "started_at": null,
+      "completed_at": null,
+      "committed_sha": null,
+      "notes": ""
+    },
+    {
+      "id": "T008",
+      "phase": 1,
+      "name": "Phase 1 integration test",
+      "status": "todo",
+      "started_at": null,
+      "completed_at": null,
+      "committed_sha": null,
+      "notes": ""
+    }
+  ]
+}
