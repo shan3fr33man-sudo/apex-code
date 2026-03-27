@@ -7,8 +7,11 @@ const serverSchema = z.object({
   TOGETHER_API_KEY: z.string().min(1).optional(),
   OPENROUTER_API_KEY: z.string().min(1).optional(),
 
-  // Anthropic (orchestration)
+  // Anthropic (Claude models)
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
+
+  // OpenAI (GPT models)
+  OPENAI_API_KEY: z.string().min(1).optional(),
 
   // Supabase
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
