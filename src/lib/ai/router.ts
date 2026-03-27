@@ -12,5 +12,4 @@ export function routeTask(task: TaskType): {
   if (task === 'architecture') {
     return { provider: 'kimi', mode: 'thinking' };
   }
-  return { provider: 'claude', mode: 'instant' };
-}
+  {Ft rest of file truncated}
