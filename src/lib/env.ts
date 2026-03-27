@@ -23,6 +23,9 @@ const serverSchema = z.object({
   STRIPE_PRICE_PRO_MONTHLY: z.string().optional(),
   STRIPE_PRICE_TEAM_MONTHLY: z.string().optional(),
 
+  // Firecrawl (Web Scraping)
+  FIRECRAWL_API_KEY: z.string().min(1).optional(),
+
   // Piston (Code Execution)
   PISTON_API_URL: z.string().url().default('https://emkc.org/api/v2/piston'),
 
