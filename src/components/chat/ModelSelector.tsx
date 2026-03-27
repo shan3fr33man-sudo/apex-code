@@ -1,6 +1,7 @@
 'use client';
 
-import { Zap, Brain } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Zap, Brain, Sparkles, Lock } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -9,17 +10,28 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+interface ModelInfo {
+  id: string;
+  label: string;
+  provider: string;
+  tier: string;
+  description: string;
+  supportsThinking: boolean;
+}
+
 interface ModelSelectorProps {
-  mode: string;
-  onModeChange: (mode: string) => void;
+  modelId: string;
+  onModelChange: (modelId: string) => void;
   taskType: string;
   onTaskTypeChange: (type: string) => void;
 }
 
-const modes = [
-  { value: 'Kimi K2.5 Instant', label: 'Kimi K2.5 Instant', icon: Zap },
-  { value: 'Kimi K2.5 Thinking', label: 'Kimi K2.5 Thinking', icon: Brain },
-];
+const providerIcons: Record<string, string> = {
+  kimi: '🌙',
+  anthropic: '🟠',
+  openai: '🟢',
+  google: '🔵',
+};
 
 const taskTypes = [
   'General',
@@ -31,26 +43,65 @@ const taskTypes = [
 ];
 
 export default function ModelSelector({
-  mode,
-  onModeChange,
+  modelId,
+  onModelChange,
   taskType,
   onTaskTypeChange,
 }: ModelSelectorProps) {
-  const currentMode = modes.find((m) => m.value === mode);
-  const ModeIcon = currentMode?.icon || Zap;
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [plan, setPlan] = useState('free');
+
+  useEffect(() => {
+    fetch('/api/models')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.models) {
+          setModels(data.models);
+          setPlan(data.plan);
+        }
+      })
+      .catch(() => {
+        // Fallback: show default model
+        setModels([{
+          id: 'kimi-k2.5',
+          label: 'Kimi K2.5',
+          provider: 'kimi',
+          tier: 'free',
+          description: 'Fast coding assistant',
+          supportsThinking: false,
+        }]);
+      });
+  }, []);
+
+  const currentModel = models.find((m) => m.id === modelId) || models[0];
+  const isPro = ['pro', 'team', 'enterprise'].includes(plan);
 
   return (
     <div className="flex gap-3 items-center">
       <div className="flex items-center gap-2">
-        <ModeIcon size={16} className="text-purple-400" />
-        <Select value={mode} onValueChange={onModeChange}>
-          <SelectTrigger className="w-48 bg-gray-800 border-gray-700">
-            <SelectValue />
+        {currentModel?.supportsThinking ? (
+          <Brain size={16} className="text-purple-400" />
+        ) : (
+          <Sparkles size={16} className="text-blue-400" />
+        )}
+        <Select value={modelId} onValueChange={onModelChange}>
+          <SelectTrigger className="w-52 bg-gray-800 border-gray-700">
+            <SelectValue placeholder="Select model" />
           </SelectTrigger>
           <SelectContent className="bg-gray-800 border-gray-700">
-            {modes.map((m) => (
-              <SelectItem key={m.value} value={m.value}>
-                {m.label}
+            {models.map((m) => (
+              <SelectItem
+                key={m.id}
+                value={m.id}
+                disabled={m.tier === 'pro' && !isPro}
+              >
+                <span className="flex items-center gap-2">
+                  <span>{providerIcons[m.provider] || '⚡'}</span>
+                  <span>{m.label}</span>
+                  {m.tier === 'pro' && !isPro && (
+                    <Lock size={12} className="text-yellow-500 ml-1" />
+                  )}
+                </span>
               </SelectItem>
             ))}
           </SelectContent>
