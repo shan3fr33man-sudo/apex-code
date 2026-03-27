@@ -36,18 +36,24 @@ export async function checkPlanAccess(
   feature: Feature
 ): Promise<boolean> {
   try {
+    // Get org plan
     const { data: org, error } = await supabaseAdmin
       .from('organizations')
       .select('plan, plan_status')
       .eq('id', orgId)
       .single();
+
     if (error || !org) {
       console.error('Error fetching org:', error);
       return false;
     }
+
+    // Check if plan is active
     if (org.plan_status !== 'active' && org.plan_status !== 'trialing') {
       return false;
     }
+
+    // Check feature access
     const allowedFeatures = FEATURE_ACCESS[org.plan] || [];
     return allowedFeatures.includes(feature);
   } catch (error) {
