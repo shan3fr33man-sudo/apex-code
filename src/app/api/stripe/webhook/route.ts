@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
 
     // 5. Log transaction (for live mode auditing)
     const isLive = event.livemode === true;
-    const invoiceObj = event.data?.object;
+    const invoiceObj = event.data?.object as any;
     await supabaseAdmin.from('stripe_transactions').insert({
       stripe_event_id: event.id,
       event_type: event.type,
@@ -80,13 +80,14 @@ export async function POST(req: NextRequest) {
 
     switch (type) {
       case 'checkout.session.completed': {
-        const session = data.object;
+        const session = data.object as any;
         const orgId = session.metadata?.org_id;
         const userId = session.metadata?.user_id;
 
         if (orgId) {
+          // Get subscription to find price ID
           const subscription = await getStripe().subscriptions.retrieve(
-            session.subscription
+            session.subscription as string
           );
 
           const priceId = subscription.items.data[0]?.price.id;
@@ -109,7 +110,7 @@ export async function POST(req: NextRequest) {
       }
 
       case 'customer.subscription.updated': {
-        const subscription = data.object;
+        const subscription = data.object as any;
         const orgId = subscription.metadata?.org_id;
 
         if (orgId && subscription.items.data.length > 0) {
@@ -132,10 +133,11 @@ export async function POST(req: NextRequest) {
       }
 
       case 'customer.subscription.deleted': {
-        const subscription = data.object;
+        const subscription = data.object as any;
         const orgId = subscription.metadata?.org_id;
 
         if (orgId) {
+          // Downgrade to free
           await supabaseAdmin
             .from('organizations')
             .update({
@@ -150,10 +152,11 @@ export async function POST(req: NextRequest) {
       }
 
       case 'invoice.payment_failed': {
-        const invoice = data.object;
+        const invoice = data.object as any;
         const customerId = invoice.customer;
 
         if (customerId) {
+          // Find org by customer ID
           const { data: orgs } = await supabaseAdmin
             .from('organizations')
             .select('id')
