@@ -27,12 +27,14 @@ export async function updateSession(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
 
+  // Protect dashboard routes
   if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);
   }
 
+  // Redirect logged-in users away from auth pages
   if (user && (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/signup')) {
     const url = request.nextUrl.clone();
     url.pathname = '/dashboard';

@@ -1,7 +1,82 @@
 import { streamText } from 'ai';
 import { getKimiModel, kimiConfig } from '@/lib/ai/kimi';
-import { createClient } from 'A/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 import { ChatRequestSchema } from '@/lib/api/types';
 import { checkTokenLimit, incrementTokenUsage } from '@/lib/billing/usage';
-import { withRetry } from 'A/lib/ai/retry';
-import { NextRequest, NextResponse } from 'next/server'; const maxDuration = 60; export async function POST() {}
+import { withRetry } from '@/lib/ai/retry';
+import { NextRequest, NextResponse } from 'next/server';
+
+export const maxDuration = 60;
+
+export async function POST(req: NextRequest) {
+  // 1. Auth
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  // 2. Validate input
+  const body = await req.json();
+  const parsed = ChatRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.message }, { status: 400 });
+  }
+
+  const { messages, conversationId, mode = 'instant', taskType } = parsed.data;
+
+  // 3. Check token limit
+  const { allowed } = await checkTokenLimit(user.id);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: 'Monthly token limit reached. Upgrade your plan.' },
+      { status: 429 }
+    );
+  }
+
+  // 4. Build system prompt based on task type
+  const systemPrompt = buildSystemPrompt(taskType);
+
+  // 5. Stream from Kimi K2.5
+  try {
+    const result = await withRetry(async () => {
+      return streamText({
+        model: getKimiModel(mode),
+        messages: messages.map((m: { role: string; content: string }) => ({
+          role: m.role as 'user' | 'assistant' | 'system',
+          content: m.content,
+        })),
+        system: systemPrompt,
+        ...kimiConfig[mode],
+        maxOutputTokens: 8192,
+        onFinish: async ({ usage }) => {
+          await incrementTokenUsage(user.id, conversationId ?? '', {
+            promptTokens: usage.inputTokens ?? 0,
+            completionTokens: usage.outputTokens ?? 0,
+            totalTokens: (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0),
+          });
+        },
+      });
+    });
+
+    return result.toUIMessageStreamResponse();
+  } catch (error: unknown) {
+    console.error('[chat/route] Kimi API error:', error);
+    const message = error instanceof Error ? error.message : 'AI service unavailable';
+    return NextResponse.json({ error: message }, { status: 503 });
+  }
+}
+
+function buildSystemPrompt(taskType?: string): string {
+  const base = `You are APEX-CODE, a world-class AI coding assistant powered by Kimi K2.5.
+You have deep expertise in all programming languages, frameworks, and system design.
+Always provide working, production-ready code. Explain your reasoning clearly.`;
+
+  const taskPrompts: Record<string, string> = {
+    'code-generation': `${base}\nFocus on writing complete, tested, production-grade code.`,
+    'debugging': `${base}\nDiagnose the root cause first, then provide the exact fix with explanation.`,
+    'refactoring': `${base}\nImprove code quality while preserving behavior. Show diffs clearly.`,
+    'explanation': `${base}\nExplain clearly for the developer's level. Use analogies when helpful.`,
+    'architecture': `${base}\nThink about scalability, maintainability, and team ergonomics.`,
+  };
+
+  return taskPrompts[taskType ?? ''] ?? base;
+}
