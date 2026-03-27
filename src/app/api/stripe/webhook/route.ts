@@ -1,4 +1,185 @@
 import { getStripe, getPlanFromPriceId } from '@/lib/stripe/config';
 import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
-:Þ²Ú~)^¶»§q«^
+
+export const runtime = 'nodejs';
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+export async function POST(req: NextRequest) {
+  try {
+    // 1. Get raw body for signature verification
+    const rawBody = await req.text();
+    const signature = req.headers.get('stripe-signature');
+
+    if (!signature || !process.env.STRIPE_WEBHOOK_SECRET) {
+      return NextResponse.json(
+        { error: 'Missing signature or webhook secret' },
+        { status: 400 }
+      );
+    }
+
+    // 2. Verify webhook signature
+    let event;
+    try {
+      event = getStripe().webhooks.constructEvent(
+        rawBody,
+        signature,
+        process.env.STRIPE_WEBHOOK_SECRET
+      );
+    } catch (err) {
+      console.error('Webhook signature verification failed:', err);
+      return NextResponse.json(
+        { error: 'Webhook signature verification failed' },
+        { status: 400 }
+      );
+    }
+
+    // 3. Check idempotency
+    const { data: existingEvent } = await supabaseAdmin
+      .from('stripe_events')
+      .select('id')
+      .eq('stripe_event_id', event.id)
+      .single();
+
+    if (existingEvent) {
+      // Already processed
+      return NextResponse.json({ received: true });
+    }
+
+    // 4. Record event for idempotency
+    await supabaseAdmin.from('stripe_events').insert({
+      stripe_event_id: event.id,
+      event_type: event.type,
+      processed_at: new Date().toISOString(),
+    });
+
+    // 5. Log transaction (for live mode auditing)
+    const isLive = event.livemode === true;
+    const invoiceObj = event.data?.object;
+    await supabaseAdmin.from('stripe_transactions').insert({
+      stripe_event_id: event.id,
+      event_type: event.type,
+      amount_cents: invoiceObj?.amount_total ?? invoiceObj?.amount_paid ?? null,
+      currency: invoiceObj?.currency ?? 'usd',
+      stripe_customer_id: invoiceObj?.customer ?? null,
+      stripe_subscription_id: invoiceObj?.subscription ?? null,
+      stripe_invoice_id: invoiceObj?.invoice ?? invoiceObj?.id ?? null,
+      livemode: isLive,
+      org_id: invoiceObj?.metadata?.org_id ?? null,
+      metadata: { raw_type: event.type, api_version: event.api_version },
+    }).then(({ error }) => {
+      if (error) console.warn('[webhook] Failed to log transaction:', error.message);
+    });
+
+    // 6. Handle event
+    const { type, data } = event;
+
+    switch (type) {
+      case 'checkout.session.completed': {
+        const session = data.object;
+        const orgId = session.metadata?.org_id;
+        const userId = session.metadata?.user_id;
+
+        if (orgId) {
+          const subscription = await getStripe().subscriptions.retrieve(
+            session.subscription
+          );
+
+          const priceId = subscription.items.data[0]?.price.id;
+          const plan = priceId ? getPlanFromPriceId(priceId) : null;
+
+          if (plan) {
+            await supabaseAdmin
+              .from('organizations')
+              .update({
+                plan: plan.name,
+                plan_status: 'active',
+                stripe_subscription_id: subscription.id,
+                monthly_token_limit: plan.limits.monthlyTokens,
+                token_reset_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+              })
+              .eq('id', orgId);
+          }
+        }
+        break;
+      }
+
+      case 'customer.subscription.updated': {
+        const subscription = data.object;
+        const orgId = subscription.metadata?.org_id;
+
+        if (orgId && subscription.items.data.length > 0) {
+          const priceId = subscription.items.data[0].price.id;
+          const plan = getPlanFromPriceId(priceId);
+
+          if (plan) {
+            const status = subscription.status === 'active' ? 'active' : 'past_due';
+            await supabaseAdmin
+              .from('organizations')
+              .update({
+                plan: plan.name,
+                plan_status: status,
+                monthly_token_limit: plan.limits.monthlyTokens,
+              })
+              .eq('id', orgId);
+          }
+        }
+        break;
+      }
+
+      case 'customer.subscription.deleted': {
+        const subscription = data.object;
+        const orgId = subscription.metadata?.org_id;
+
+        if (orgId) {
+          await supabaseAdmin
+            .from('organizations')
+            .update({
+              plan: 'free',
+              plan_status: 'active',
+              monthly_token_limit: 100_000,
+              stripe_subscription_id: null,
+            })
+            .eq('id', orgId);
+        }
+        break;
+      }
+
+      case 'invoice.payment_failed': {
+        const invoice = data.object;
+        const customerId = invoice.customer;
+
+        if (customerId) {
+          const { data: orgs } = await supabaseAdmin
+            .from('organizations')
+            .select('id')
+            .eq('stripe_customer_id', customerId)
+            .single();
+
+          if (orgs) {
+            await supabaseAdmin
+              .from('organizations')
+              .update({ plan_status: 'past_due' })
+              .eq('id', orgs.id);
+          }
+        }
+        break;
+      }
+
+      default:
+        console.log(`Unhandled event type: ${type}`);
+    }
+
+    return NextResponse.json({ received: true });
+  } catch (error) {
+    console.error('Webhook error:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Webhook processing failed' },
+      { status: 500 }
+    );
+  }
+}
